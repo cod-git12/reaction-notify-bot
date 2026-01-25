@@ -1,4 +1,14 @@
-const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+require("dotenv").config();
+
+const {
+  REST,
+  Routes,
+  SlashCommandBuilder
+} = require("discord.js");
+
+/* =======================
+   コマンド定義
+======================= */
 
 const commands = [
   new SlashCommandBuilder()
@@ -13,7 +23,10 @@ const commands = [
         .setName("add")
         .setDescription("ログ送信チャンネルを設定 / Set log channel")
         .addChannelOption(opt =>
-          opt.setName("channel").setDescription("チャンネル").setRequired(true)
+          opt
+            .setName("channel")
+            .setDescription("チャンネル")
+            .setRequired(true)
         )
     )
     .addSubcommand(sub =>
@@ -40,15 +53,32 @@ const commands = [
   new SlashCommandBuilder()
     .setName("help")
     .setDescription("ヘルプを表示 / Show help")
-].map(c => c.toJSON());
+].map(cmd => cmd.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(process.env.REA_BOT_TOKEN);
+/* =======================
+   REST クライアント
+======================= */
+
+const rest = new REST({ version: "10" }).setToken(
+  process.env.REA_BOT_TOKEN
+);
+
+/* =======================
+   登録処理
+======================= */
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(process.env.REA_CLIENT_ID),
-    { body: commands }
-  );
-  console.log("Commands deployed.");
-})();
+  try {
+    console.log("🔄 Deploying slash commands...");
 
+    await rest.put(
+      Routes.applicationCommands(process.env.REA_CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("✅ Slash commands deployed successfully.");
+  } catch (error) {
+    console.error("❌ Failed to deploy commands:");
+    console.error(error);
+  }
+})();
