@@ -1,15 +1,12 @@
+require("dotenv").config();
+const fs = require("fs");
 const {
   Client,
   GatewayIntentBits,
   Partials,
   EmbedBuilder,
-  PermissionsBitField,
-  SlashCommandBuilder,
-  Routes,
-  REST
+  PermissionFlagsBits
 } = require("discord.js");
-const fs = require("fs");
-require("dotenv").config();
 
 const client = new Client({
   intents: [
@@ -21,164 +18,143 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-/* ===== 永続データ ===== */
-const DATA_FILE = "./reaction-log.json";
-let store = {
-  logChannels: {}, // guildId -> channelId
-  dmMap: {}        // key -> dmMessageId
+const DATA_FILE = "./reaction-data.json";
+
+// ===== 永続化データ =====
+let data = {
+  ignoreUsers: {},
+  logChannels: {},
+  dmMessages: {} // reactionKey → dmMessageId
 };
 
 if (fs.existsSync(DATA_FILE)) {
-  store = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
 }
 
-const save = () =>
-  fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
+const save = () => {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+};
 
-/* ===== コマンド定義 ===== */
-const commands = [
-  new SlashCommandBuilder()
-    .setName("log")
-    .setDescription("リアクションログ設定")
-    .addSubcommand(sc =>
-      sc.setName("add")
-        .setDescription("ログ送信チャンネルを設定")
-        .addChannelOption(opt =>
-          opt.setName("channel")
-            .setDescription("ログ送信先")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand(sc =>
-      sc.setName("remove")
-        .setDescription("ログ送信を解除")
-    )
-].map(c => c.toJSON());
-
-/* ===== コマンド登録 ===== */
-client.once("clientReady", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-
-  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
-
-  console.log("Commands registered");
+// ===== ready =====
+client.once("clientReady", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
 });
 
-/* ===== コマンド処理 ===== */
+// ===== スラッシュコマンド =====
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "管理者専用です", ephemeral: true });
+  // /ignore
+  if (interaction.commandName === "ignore") {
+    const mode = interaction.options.getString("mode");
+    const uid = interaction.user.id;
+
+    data.ignoreUsers[uid] = mode === "on";
+    save();
+
+    return interaction.reply({
+      content: `🔔 通知を **${mode === "on" ? "OFF" : "ON"}** にしました`,
+      ephemeral: true
+    });
   }
 
+  // /log
   if (interaction.commandName === "log") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: "❌ 管理者専用コマンドです",
+        ephemeral: true
+      });
+    }
+
     const sub = interaction.options.getSubcommand();
+    const gid = interaction.guildId;
 
     if (sub === "add") {
-      const ch = interaction.options.getChannel("channel");
-      store.logChannels[interaction.guildId] = ch.id;
+      const channel = interaction.options.getChannel("channel");
+      data.logChannels[gid] = channel.id;
       save();
-      return interaction.reply(`✅ ログ送信先を ${ch} に設定しました`);
+
+      return interaction.reply({
+        content: `📜 ログ送信先を ${channel} に設定しました`,
+        ephemeral: true
+      });
     }
 
     if (sub === "remove") {
-      delete store.logChannels[interaction.guildId];
+      delete data.logChannels[gid];
       save();
-      return interaction.reply("🗑 ログ送信を解除しました");
+
+      return interaction.reply({
+        content: "🗑️ ログ送信を停止しました",
+        ephemeral: true
+      });
     }
   }
 });
 
-/* ===== 共通Embed生成 ===== */
-function createEmbed(type, reaction, user) {
+// ===== Embed生成 =====
+const createEmbed = (reaction, user) => {
   const msg = reaction.message;
-  const guild = msg.guild;
-
-  const jumpUrl =
-    `https://discord.com/channels/${guild.id}/${msg.channel.id}/${msg.id}`;
+  const url = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.id}`;
 
   return new EmbedBuilder()
-    .setColor(type === "add" ? 0x00ff99 : 0xff5555)
-    .setTitle(type === "add" ? "リアクション追加" : "リアクション削除")
-    .setDescription("（本文なし）")
-    .addFields(
-      {
-        name: "サーバー",
-        value: `[${guild.name}](https://discord.com/channels/${guild.id})`
-      },
-      {
-        name: "ユーザー",
-        value: `<@${user.id}>`
-      },
-      {
-        name: "リアクション",
-        value: reaction.emoji.toString(),
-        inline: true
-      },
-      {
-        name: "元メッセージ",
-        value: `[ジャンプする](${jumpUrl})`
-      }
+    .setColor(0x00bfff)
+    .setTitle("リアクション通知")
+    .setDescription(
+      `**サーバー**: [${msg.guild.name}](${url})\n` +
+      `**ユーザー**: <@${user.id}>\n` +
+      `**絵文字**: ${reaction.emoji}\n` +
+      `**チャンネル**: <#${msg.channelId}>`
     )
+    .setFooter({ text: "クリックで元メッセージへ移動" })
     .setTimestamp();
-}
+};
 
-/* ===== リアクション追加 ===== */
+// ===== reaction add =====
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
+  if (data.ignoreUsers[user.id]) return;
+
   if (reaction.partial) await reaction.fetch();
+  const msg = reaction.message;
 
-  const embed = createEmbed("add", reaction, user);
+  if (msg.author.id !== user.id) return;
 
-  /* DM送信 */
-  const dm = await user.send({ embeds: [embed] }).catch(() => null);
-  if (dm) {
-    const key =
-      `${reaction.message.guildId}_${reaction.message.id}_${user.id}_${reaction.emoji.identifier}`;
-    store.dmMap[key] = dm.id;
-    save();
-  }
+  const embed = createEmbed(reaction, user);
+  const key = `${msg.id}_${reaction.emoji.identifier}_${user.id}`;
 
-  /* ログ送信 */
-  const logChId = store.logChannels[reaction.message.guildId];
+  // DM
+  const dm = await user.send({ embeds: [embed] });
+  data.dmMessages[key] = dm.id;
+
+  // Log
+  const logChId = data.logChannels[msg.guildId];
   if (logChId) {
-    const ch = reaction.message.guild.channels.cache.get(logChId);
-    ch?.send({ embeds: [embed] });
+    const ch = await client.channels.fetch(logChId);
+    await ch.send({ embeds: [embed] });
   }
+
+  save();
 });
 
-/* ===== リアクション削除 ===== */
+// ===== reaction remove =====
 client.on("messageReactionRemove", async (reaction, user) => {
-  if (user.bot) return;
   if (reaction.partial) await reaction.fetch();
+  const msg = reaction.message;
+  const key = `${msg.id}_${reaction.emoji.identifier}_${user.id}`;
 
-  const key =
-    `${reaction.message.guildId}_${reaction.message.id}_${user.id}_${reaction.emoji.identifier}`;
+  const dmId = data.dmMessages[key];
+  if (!dmId) return;
 
-  /* DM削除 */
   try {
-    const dmId = store.dmMap[key];
-    if (dmId) {
-      const dm = await user.createDM();
-      const msg = await dm.messages.fetch(dmId);
-      await msg.delete();
-      delete store.dmMap[key];
-      save();
-    }
+    const dm = await user.createDM();
+    const m = await dm.messages.fetch(dmId);
+    await m.delete();
   } catch {}
 
-  /* ログ送信 */
-  const logChId = store.logChannels[reaction.message.guildId];
-  if (logChId) {
-    const embed = createEmbed("remove", reaction, user);
-    const ch = reaction.message.guild.channels.cache.get(logChId);
-    ch?.send({ embeds: [embed] });
-  }
+  delete data.dmMessages[key];
+  save();
 });
 
 client.login(process.env.TOKEN);
