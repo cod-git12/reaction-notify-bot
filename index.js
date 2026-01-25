@@ -5,7 +5,12 @@ const {
 } = require("discord.js");
 const fs = require("fs");
 
+/* =======================
+   環境変数
+======================= */
+
 const TOKEN = process.env.REA_BOT_TOKEN;
+const UPDATE_CHANNEL_ID = "1453677204301942826";
 const DATA_FILE = "./data.json";
 
 /* =======================
@@ -93,7 +98,7 @@ client.once("ready", () => {
 });
 
 /* =======================
-   リアクション追加
+   リアクション通知
 ======================= */
 
 client.on("messageReactionAdd", async (reaction, user) => {
@@ -107,8 +112,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (!message.guild) return;
 
     const guildData = getGuild(message.guild.id);
-    if (!guildData.dmNotify) return;
-
     const lang = T[guildData.language] || T.ja;
 
     const jumpUrl = `https://discord.com/channels/${message.guild.id}/${message.channel.id}/${message.id}`;
@@ -129,9 +132,100 @@ client.on("messageReactionAdd", async (reaction, user) => {
       timestamp: new Date()
     };
 
-    await message.author.send({ embeds: [embed] });
+    // DM通知
+    if (guildData.dmNotify) {
+      await message.author.send({ embeds: [embed] }).catch(() => {});
+    }
+
+    // ログチャンネル通知
+    if (guildData.logChannelId) {
+      const logCh = message.guild.channels.cache.get(
+        guildData.logChannelId
+      );
+      if (logCh) {
+        logCh.send({ embeds: [embed] }).catch(() => {});
+      }
+    }
+
   } catch (err) {
     console.error("Reaction notify error:", err);
+  }
+});
+
+/* =======================
+   コマンド処理
+======================= */
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const gid = interaction.guildId;
+  const g = getGuild(gid);
+
+  if (interaction.commandName === "ignore") {
+    g.dmNotify = !g.dmNotify;
+    saveData();
+
+    await interaction.reply({
+      content: `DM通知を **${g.dmNotify ? "ON" : "OFF"}** にしました`,
+      ephemeral: true
+    });
+  }
+
+  if (interaction.commandName === "log") {
+    const sub = interaction.options.getSubcommand();
+
+    if (sub === "add") {
+      const ch = interaction.options.getChannel("channel");
+      g.logChannelId = ch.id;
+      saveData();
+
+      await interaction.reply({
+        content: `ログ送信チャンネルを <#${ch.id}> に設定しました`,
+        ephemeral: true
+      });
+    }
+
+    if (sub === "remove") {
+      g.logChannelId = null;
+      saveData();
+
+      await interaction.reply({
+        content: "ログ送信を無効化しました",
+        ephemeral: true
+      });
+    }
+  }
+
+  if (interaction.commandName === "language") {
+    g.language = interaction.options.getString("lang");
+    saveData();
+
+    await interaction.reply({
+      content: `言語を **${g.language}** に変更しました`,
+      ephemeral: true
+    });
+  }
+
+  if (interaction.commandName === "update") {
+    const msg = interaction.options.getString("text");
+
+    const ch = client.channels.cache.get(UPDATE_CHANNEL_ID);
+    if (ch) {
+      await ch.send({
+        embeds: [{
+          title: "📢 アップデート通知",
+          description: msg,
+          color: 0x00ff99,
+          timestamp: new Date()
+        }]
+      });
+    }
+
+    await interaction.reply({
+      content: "アップデート通知を送信しました",
+      ephemeral: true
+    });
   }
 });
 
@@ -140,17 +234,3 @@ client.on("messageReactionAdd", async (reaction, user) => {
 ======================= */
 
 client.login(TOKEN);
-
-
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  try {
-    await interaction.reply({
-      content: "OK、コマンド受け取った",
-      ephemeral: true
-    });
-  } catch (err) {
-    console.error("interaction error:", err);
-  }
-});
