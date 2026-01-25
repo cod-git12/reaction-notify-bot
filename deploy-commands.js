@@ -42,11 +42,11 @@ const commands = [
     .setDescription("ヘルプを表示 / Show help")
 ].map(c => c.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.REA_BOT_TOKEN);
 
 (async () => {
   await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
+    Routes.applicationCommands(process.env.REA_CLIENT_ID),
     { body: commands }
   );
   console.log("Commands deployed.");
