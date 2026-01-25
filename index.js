@@ -47,7 +47,7 @@ function getGuild(gid) {
 const T = {
   ja: {
     reactionTitle: "リアクション通知",
-    jump: "👉 元メッセージへジャンプ",
+    jump: "元メッセージへジャンプ",
     none: "（本文なし）",
     server: "サーバー",
     channel: "チャンネル",
@@ -57,7 +57,7 @@ const T = {
   },
   en: {
     reactionTitle: "Reaction Notification",
-    jump: "👉 Jump to message",
+    jump: "Jump to message",
     none: "(No content)",
     server: "Server",
     channel: "Channel",
@@ -67,7 +67,7 @@ const T = {
   },
   fr: {
     reactionTitle: "Notification de réaction",
-    jump: "👉 Aller au message",
+    jump: "Aller au message",
     none: "(Aucun contenu)",
     server: "Serveur",
     channel: "Salon",
