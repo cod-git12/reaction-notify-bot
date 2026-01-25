@@ -3,214 +3,151 @@ const {
   GatewayIntentBits,
   Partials,
   EmbedBuilder,
-  PermissionsBitField,
-  Events
+  PermissionFlagsBits
 } = require("discord.js");
 const fs = require("fs");
-
-/* ========= 設定 ========= */
-
-const DATA_FILE = "./data.json";
-
-/*
-data.json の中身イメージ
-{
-  "ignoreUsers": {},
-  "logChannels": {},
-  "dmMessages": {}
-}
-*/
-
-let data = {
-  ignoreUsers: {},
-  logChannels: {},
-  dmMessages: {}
-};
-
-if (fs.existsSync(DATA_FILE)) {
-  data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-}
-
-function save() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-/* ========= Client ========= */
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.DirectMessages
   ],
-  partials: [
-    Partials.Message,
-    Partials.Channel,
-    Partials.Reaction
-  ]
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-/* ========= 起動 ========= */
+/* ===== 永続データ ===== */
+const DATA_FILE = "./data.json";
+let data = { ignore: {}, logChannels: {}, languages: {} };
 
-client.once(Events.ClientReady, () => {
-  console.log(`Logged in as ${client.user.tag}`);
+if (fs.existsSync(DATA_FILE)) {
+  data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+}
+const save = () =>
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+/* ===== 多言語 ===== */
+const TEXT = {
+  ja: {
+    reactionAdd: "リアクションが追加されました",
+    reactionRemove: "リアクションが削除されました",
+    dmOn: "🔔 DM通知をオンにしました",
+    dmOff: "🔕 DM通知をオフにしました",
+    jump: "メッセージへジャンプ",
+    updated: "✅ 設定を更新しました",
+    adminOnly: "❌ 管理者のみ実行できます"
+  },
+  en: {
+    reactionAdd: "Reaction added",
+    reactionRemove: "Reaction removed",
+    dmOn: "🔔 DM notifications enabled",
+    dmOff: "🔕 DM notifications disabled",
+    jump: "Jump to message",
+    updated: "✅ Settings updated",
+    adminOnly: "❌ Administrator only"
+  },
+  fr: {
+    reactionAdd: "Réaction ajoutée",
+    reactionRemove: "Réaction supprimée",
+    dmOn: "🔔 Notifications DM activées",
+    dmOff: "🔕 Notifications DM désactivées",
+    jump: "Aller au message",
+    updated: "✅ Paramètres mis à jour",
+    adminOnly: "❌ Administrateur uniquement"
+  }
+};
+
+const langOf = gid => data.languages[gid] || "ja";
+const t = (gid, key) => TEXT[langOf(gid)][key] || TEXT.ja[key];
+
+/* ===== Ready ===== */
+client.once("clientReady", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
 });
 
-/* ========= Embed生成 ========= */
+/* ===== Slash Commands ===== */
+client.on("interactionCreate", async i => {
+  if (!i.isChatInputCommand()) return;
 
-function createEmbed(reaction, user) {
+  if (
+    !i.memberPermissions?.has(PermissionFlagsBits.Administrator)
+  ) {
+    return i.reply({ content: t(i.guildId, "adminOnly"), ephemeral: true });
+  }
+
+  /* /ignore */
+  if (i.commandName === "ignore") {
+    const uid = i.user.id;
+    data.ignore[uid] = !data.ignore[uid];
+    save();
+
+    const embed = new EmbedBuilder().setDescription(
+      data.ignore[uid] ? t(i.guildId, "dmOff") : t(i.guildId, "dmOn")
+    );
+
+    try { await i.user.send({ embeds: [embed] }); } catch {}
+
+    const logCh = data.logChannels[i.guildId];
+    if (logCh) {
+      const ch = i.guild.channels.cache.get(logCh);
+      if (ch) ch.send({ content: `<@${uid}>`, embeds: [embed] });
+    }
+
+    return i.reply({ content: t(i.guildId, "updated"), ephemeral: true });
+  }
+
+  /* /log */
+  if (i.commandName === "log") {
+    const sub = i.options.getSubcommand();
+    if (sub === "add") {
+      const ch = i.options.getChannel("channel");
+      data.logChannels[i.guildId] = ch.id;
+      save();
+      return i.reply(`✅ ${ch} にログを送信します`);
+    }
+    if (sub === "remove") {
+      delete data.logChannels[i.guildId];
+      save();
+      return i.reply("🗑️ ログを無効化しました");
+    }
+  }
+
+  /* /language */
+  if (i.commandName === "language") {
+    const lang = i.options.getString("lang");
+    data.languages[i.guildId] = lang;
+    save();
+    return i.reply(`🌐 言語を **${lang}** に設定しました`);
+  }
+});
+
+/* ===== Reaction Add / Remove ===== */
+async function notify(reaction, user, added) {
+  if (user.bot) return;
+  if (data.ignore[user.id]) return;
+
   const msg = reaction.message;
-  const jumpUrl = msg.url;
+  const link = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.id}`;
 
-  return new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setTitle("リアクション通知")
-    .setDescription(
-      [
-        `**サーバー**: [${msg.guild.name}](https://discord.com/channels/${msg.guild.id})`,
-        `**チャンネル**: <#${msg.channel.id}>`,
-        `**メッセージ作者**: <@${msg.author.id}>`,
-        `**リアクションした人**: <@${user.id}>`,
-        `**絵文字**: ${reaction.emoji}`,
-        ``,
-        `👉 [元メッセージへジャンプ](${jumpUrl})`,
-        ``,
-        `**内容**: ${msg.content || "（本文なし）"}`
-      ].join("\n")
+  const embed = new EmbedBuilder()
+    .setTitle(
+      added ? t(msg.guildId, "reactionAdd") : t(msg.guildId, "reactionRemove")
     )
-    .setTimestamp();
+    .setDescription(
+      `**${t(msg.guildId, "jump")}**\n[${t(msg.guildId, "jump")}](${link})`
+    );
+
+  try { await msg.author.send({ embeds: [embed] }); } catch {}
+
+  const logCh = data.logChannels[msg.guildId];
+  if (logCh) {
+    const ch = msg.guild.channels.cache.get(logCh);
+    if (ch) ch.send({ embeds: [embed] });
+  }
 }
 
-/* ========= リアクション追加 ========= */
-
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
-  try {
-    if (user.bot) return;
-
-    if (reaction.partial) await reaction.fetch();
-    if (reaction.message.partial) await reaction.message.fetch();
-
-    const msg = reaction.message;
-
-    // DM無視設定
-    if (data.ignoreUsers[msg.author.id]) return;
-
-    const embed = createEmbed(reaction, user);
-    const key = `${msg.id}_${reaction.emoji.identifier}_${user.id}`;
-
-    // DM送信（メッセージ作者）
-    const dm = await msg.author.send({ embeds: [embed] });
-    data.dmMessages[key] = dm.id;
-
-    // ログチャンネル
-    const logChannelId = data.logChannels[msg.guildId];
-    if (logChannelId) {
-      const logChannel = await client.channels.fetch(logChannelId);
-      if (logChannel) {
-        await logChannel.send({ embeds: [embed] });
-      }
-    }
-
-    save();
-  } catch (err) {
-    console.error(err);
-  }
-});
-
-/* ========= リアクション削除 ========= */
-
-client.on(Events.MessageReactionRemove, async (reaction, user) => {
-  try {
-    if (user.bot) return;
-
-    if (reaction.partial) await reaction.fetch();
-    if (reaction.message.partial) await reaction.message.fetch();
-
-    const msg = reaction.message;
-    const key = `${msg.id}_${reaction.emoji.identifier}_${user.id}`;
-    const dmId = data.dmMessages[key];
-    if (!dmId) return;
-
-    const dm = await msg.author.createDM();
-    const message = await dm.messages.fetch(dmId);
-    await message.delete();
-
-    delete data.dmMessages[key];
-    save();
-  } catch (err) {
-    // DM削除済みなどは無視
-  }
-});
-
-/* ========= スラッシュコマンド ========= */
-
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  // 管理者限定
-  if (
-    !interaction.member.permissions.has(
-      PermissionsBitField.Flags.Administrator
-    )
-  ) {
-    return interaction.reply({
-      content: "❌ 管理者専用コマンドです",
-      ephemeral: true
-    });
-  }
-
-  /* ---- /ignore ---- */
-  if (interaction.commandName === "ignore") {
-    const mode = interaction.options.getString("mode");
-
-    if (mode === "on") {
-      data.ignoreUsers[interaction.user.id] = true;
-      save();
-      return interaction.reply({
-        content: "🔕 DM通知をオフにしました",
-        ephemeral: true
-      });
-    }
-
-    if (mode === "off") {
-      delete data.ignoreUsers[interaction.user.id];
-      save();
-      return interaction.reply({
-        content: "🔔 DM通知をオンにしました",
-        ephemeral: true
-      });
-    }
-  }
-
-  /* ---- /log ---- */
-  if (interaction.commandName === "log") {
-    const sub = interaction.options.getSubcommand();
-
-    if (sub === "add") {
-      const channel = interaction.options.getChannel("channel");
-      data.logChannels[interaction.guildId] = channel.id;
-      save();
-
-      return interaction.reply({
-        content: `✅ リアクションログ送信先を ${channel} に設定しました`,
-        ephemeral: true
-      });
-    }
-
-    if (sub === "remove") {
-      delete data.logChannels[interaction.guildId];
-      save();
-
-      return interaction.reply({
-        content: "🗑️ リアクションログを無効化しました",
-        ephemeral: true
-      });
-    }
-  }
-});
-
-/* ========= ログイン ========= */
+client.on("messageReactionAdd", (r, u) => notify(r, u, true));
+client.on("messageReactionRemove", (r, u) => notify(r, u, false));
 
 client.login(process.env.BOT_TOKEN);
