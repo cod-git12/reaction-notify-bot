@@ -7,7 +7,6 @@ const {
   Events
 } = require("discord.js");
 const fs = require("fs");
-require("dotenv").config();
 
 /* ========= 設定 ========= */
 
