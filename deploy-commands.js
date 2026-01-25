@@ -1,47 +1,37 @@
-require("dotenv").config();
-
 const {
   REST,
   Routes,
   SlashCommandBuilder
 } = require("discord.js");
 
-/* =======================
-   コマンド定義
-======================= */
-
 const commands = [
   new SlashCommandBuilder()
     .setName("ignore")
-    .setDescription("DM通知の切り替え / Toggle DM notifications"),
+    .setDescription("DM通知の切り替え"),
 
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("リアクションログ設定 / Reaction log settings")
+    .setDescription("リアクションログ設定")
     .addSubcommand(sub =>
       sub
         .setName("add")
-        .setDescription("ログ送信チャンネルを設定 / Set log channel")
+        .setDescription("ログ送信チャンネルを設定")
         .addChannelOption(opt =>
-          opt
-            .setName("channel")
-            .setDescription("チャンネル")
-            .setRequired(true)
+          opt.setName("channel").setDescription("チャンネル").setRequired(true)
         )
     )
     .addSubcommand(sub =>
       sub
         .setName("remove")
-        .setDescription("ログ送信を無効化 / Disable log channel")
+        .setDescription("ログ送信を無効化")
     ),
 
   new SlashCommandBuilder()
     .setName("language")
-    .setDescription("言語設定 / Set language")
+    .setDescription("言語設定")
     .addStringOption(opt =>
       opt
         .setName("lang")
-        .setDescription("Language")
         .setRequired(true)
         .addChoices(
           { name: "日本語", value: "ja" },
@@ -51,34 +41,23 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("ヘルプを表示 / Show help")
-].map(cmd => cmd.toJSON());
+    .setName("update")
+    .setDescription("アップデート通知を送信")
+    .addStringOption(opt =>
+      opt
+        .setName("text")
+        .setDescription("通知内容")
+        .setRequired(true)
+    )
+].map(c => c.toJSON());
 
-/* =======================
-   REST クライアント
-======================= */
-
-const rest = new REST({ version: "10" }).setToken(
-  process.env.REA_BOT_TOKEN
-);
-
-/* =======================
-   登録処理
-======================= */
+const rest = new REST({ version: "10" })
+  .setToken(process.env.REA_BOT_TOKEN);
 
 (async () => {
-  try {
-    console.log("🔄 Deploying slash commands...");
-
-    await rest.put(
-      Routes.applicationCommands(process.env.REA_CLIENT_ID),
-      { body: commands }
-    );
-
-    console.log("✅ Slash commands deployed successfully.");
-  } catch (error) {
-    console.error("❌ Failed to deploy commands:");
-    console.error(error);
-  }
+  await rest.put(
+    Routes.applicationCommands(process.env.REA_CLIENT_ID),
+    { body: commands }
+  );
+  console.log("Commands deployed.");
 })();
