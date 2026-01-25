@@ -1,4 +1,4 @@
-node_modules
+node_modules/
 .env
-reaction-data.json
-
+data.json
+.DS_Store
