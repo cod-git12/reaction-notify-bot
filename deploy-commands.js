@@ -1,4 +1,3 @@
-require("dotenv").config();
 const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require("discord.js");
 
 const commands = [
