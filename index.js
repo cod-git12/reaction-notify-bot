@@ -156,4 +156,4 @@ client.on("messageReactionRemove", async (reaction, user) => {
   save();
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.BOT_TOKEN);
