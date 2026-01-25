@@ -2,117 +2,183 @@ const {
   Client,
   GatewayIntentBits,
   Partials,
-  EmbedBuilder
+  EmbedBuilder,
+  PermissionsBitField,
+  SlashCommandBuilder,
+  Routes,
+  REST
 } = require("discord.js");
+const fs = require("fs");
+require("dotenv").config();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages
   ],
-  partials: [
-    Partials.Message,
-    Partials.Channel,
-    Partials.Reaction
-  ]
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// 通知ON/OFF管理（userId => true/false）
-// true = 通知ON, false = 通知OFF
-// 初期状態は ON
-const notifyState = new Map();
+/* ===== 永続データ ===== */
+const DATA_FILE = "./reaction-log.json";
+let store = {
+  logChannels: {}, // guildId -> channelId
+  dmMap: {}        // key -> dmMessageId
+};
 
-client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
+if (fs.existsSync(DATA_FILE)) {
+  store = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+}
+
+const save = () =>
+  fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
+
+/* ===== コマンド定義 ===== */
+const commands = [
+  new SlashCommandBuilder()
+    .setName("log")
+    .setDescription("リアクションログ設定")
+    .addSubcommand(sc =>
+      sc.setName("add")
+        .setDescription("ログ送信チャンネルを設定")
+        .addChannelOption(opt =>
+          opt.setName("channel")
+            .setDescription("ログ送信先")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand(sc =>
+      sc.setName("remove")
+        .setDescription("ログ送信を解除")
+    )
+].map(c => c.toJSON());
+
+/* ===== コマンド登録 ===== */
+client.once("clientReady", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+
+  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+  await rest.put(
+    Routes.applicationCommands(client.user.id),
+    { body: commands }
+  );
+
+  console.log("Commands registered");
 });
 
-// /ignore コマンド処理
+/* ===== コマンド処理 ===== */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== "ignore") return;
 
-  const mode = interaction.options.getString("mode");
-  const userId = interaction.user.id;
-
-  if (mode === "on") {
-    notifyState.set(userId, false);
-    await interaction.reply({
-      content: "🔕 リアクション通知を **OFF** にしました",
-      ephemeral: true
-    });
+  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "管理者専用です", ephemeral: true });
   }
 
-  if (mode === "off") {
-    notifyState.set(userId, true);
-    await interaction.reply({
-      content: "🔔 リアクション通知を **ON** にしました",
-      ephemeral: true
-    });
-  }
-});
+  if (interaction.commandName === "log") {
+    const sub = interaction.options.getSubcommand();
 
-// リアクション検知
-client.on("messageReactionAdd", async (reaction, user) => {
-  // Botのリアクションは無視
-  if (user.bot) return;
+    if (sub === "add") {
+      const ch = interaction.options.getChannel("channel");
+      store.logChannels[interaction.guildId] = ch.id;
+      save();
+      return interaction.reply(`✅ ログ送信先を ${ch} に設定しました`);
+    }
 
-  // partial対策
-  if (reaction.partial) {
-    try {
-      await reaction.fetch();
-    } catch {
-      return;
+    if (sub === "remove") {
+      delete store.logChannels[interaction.guildId];
+      save();
+      return interaction.reply("🗑 ログ送信を解除しました");
     }
   }
+});
 
-  const message = reaction.message;
-  const author = message.author;
-  if (!author) return;
+/* ===== 共通Embed生成 ===== */
+function createEmbed(type, reaction, user) {
+  const msg = reaction.message;
+  const guild = msg.guild;
 
-  // 通知ON/OFF確認（デフォルトON）
-  const notify = notifyState.get(author.id) ?? true;
-  if (!notify) return;
+  const jumpUrl =
+    `https://discord.com/channels/${guild.id}/${msg.channel.id}/${msg.id}`;
 
-  // メッセージURL（ジャンプ用）
-  const messageUrl = message.guildId
-    ? `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`
-    : null;
-
-  const embed = new EmbedBuilder()
-    .setTitle("📢 リアクション通知")
-    .setColor(0x5865F2)
-    .setDescription(
-      `**サーバー**: ${
-        message.guild
-          ? `[${message.guild.name}](${messageUrl})`
-          : "DM"
-      }\n` +
-      `**チャンネル**: <#${message.channelId}>\n` +
-      `**リアクション**: ${reaction.emoji}\n` +
-      `**付けた人**: <@${user.id}>`
+  return new EmbedBuilder()
+    .setColor(type === "add" ? 0x00ff99 : 0xff5555)
+    .setTitle(type === "add" ? "リアクション追加" : "リアクション削除")
+    .setDescription("（本文なし）")
+    .addFields(
+      {
+        name: "サーバー",
+        value: `[${guild.name}](https://discord.com/channels/${guild.id})`
+      },
+      {
+        name: "ユーザー",
+        value: `<@${user.id}>`
+      },
+      {
+        name: "リアクション",
+        value: reaction.emoji.toString(),
+        inline: true
+      },
+      {
+        name: "元メッセージ",
+        value: `[ジャンプする](${jumpUrl})`
+      }
     )
     .setTimestamp();
+}
 
-  // 本文がある場合だけ表示
-  if (message.content) {
-    embed.addFields({
-      name: "💬 メッセージ内容",
-      value: message.content.slice(0, 1024)
-    });
+/* ===== リアクション追加 ===== */
+client.on("messageReactionAdd", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const embed = createEmbed("add", reaction, user);
+
+  /* DM送信 */
+  const dm = await user.send({ embeds: [embed] }).catch(() => null);
+  if (dm) {
+    const key =
+      `${reaction.message.guildId}_${reaction.message.id}_${user.id}_${reaction.emoji.identifier}`;
+    store.dmMap[key] = dm.id;
+    save();
   }
 
-  // フッター
-  embed.setFooter({
-    text: "クリックで元メッセージへ移動"
-  });
-
-  try {
-    await author.send({ embeds: [embed] });
-  } catch (e) {
-    console.error("DM送信失敗", e);
+  /* ログ送信 */
+  const logChId = store.logChannels[reaction.message.guildId];
+  if (logChId) {
+    const ch = reaction.message.guild.channels.cache.get(logChId);
+    ch?.send({ embeds: [embed] });
   }
 });
 
-client.login(process.env.BOT_TOKEN);
+/* ===== リアクション削除 ===== */
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const key =
+    `${reaction.message.guildId}_${reaction.message.id}_${user.id}_${reaction.emoji.identifier}`;
+
+  /* DM削除 */
+  try {
+    const dmId = store.dmMap[key];
+    if (dmId) {
+      const dm = await user.createDM();
+      const msg = await dm.messages.fetch(dmId);
+      await msg.delete();
+      delete store.dmMap[key];
+      save();
+    }
+  } catch {}
+
+  /* ログ送信 */
+  const logChId = store.logChannels[reaction.message.guildId];
+  if (logChId) {
+    const embed = createEmbed("remove", reaction, user);
+    const ch = reaction.message.guild.channels.cache.get(logChId);
+    ch?.send({ embeds: [embed] });
+  }
+});
+
+client.login(process.env.TOKEN);
