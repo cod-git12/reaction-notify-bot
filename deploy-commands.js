@@ -51,3 +51,17 @@ const rest = new REST({ version: "10" }).setToken(process.env.REA_BOT_TOKEN);
   );
   console.log("Commands deployed.");
 })();
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  try {
+    await interaction.reply({
+      content: "OK、コマンド受け取った",
+      ephemeral: true
+    });
+  } catch (err) {
+    console.error("interaction error:", err);
+  }
+});
+
