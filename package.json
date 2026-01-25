@@ -1,7 +1,7 @@
 {
   "name": "reaction-notify-bot",
   "version": "1.0.0",
-  "description": "Notify via DM when reactions are added",
+  "description": "Notify and log message reactions (multi-language)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
