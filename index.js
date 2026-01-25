@@ -140,3 +140,17 @@ client.on("messageReactionAdd", async (reaction, user) => {
 ======================= */
 
 client.login(TOKEN);
+
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  try {
+    await interaction.reply({
+      content: "OK、コマンド受け取った",
+      ephemeral: true
+    });
+  } catch (err) {
+    console.error("interaction error:", err);
+  }
+});
