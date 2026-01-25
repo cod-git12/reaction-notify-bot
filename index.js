@@ -1,17 +1,11 @@
 const {
   Client,
   GatewayIntentBits,
-  Partials,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  PermissionFlagsBits
+  Partials
 } = require("discord.js");
 const fs = require("fs");
 
 const TOKEN = process.env.REA_BOT_TOKEN;
-const CLIENT_ID = process.env.REA_CLIENT_ID;
-
 const DATA_FILE = "./data.json";
 
 /* =======================
@@ -53,7 +47,8 @@ const T = {
     channel: "チャンネル",
     author: "メッセージ作者",
     reactor: "リアクションした人",
-    emoji: "絵文字"
+    emoji: "絵文字",
+    content: "内容"
   },
   en: {
     reactionTitle: "Reaction Notification",
@@ -63,7 +58,8 @@ const T = {
     channel: "Channel",
     author: "Message author",
     reactor: "Reacted by",
-    emoji: "Emoji"
+    emoji: "Emoji",
+    content: "Content"
   },
   fr: {
     reactionTitle: "Notification de réaction",
@@ -73,7 +69,8 @@ const T = {
     channel: "Salon",
     author: "Auteur du message",
     reactor: "Réaction par",
-    emoji: "Emoji"
+    emoji: "Emoji",
+    content: "Contenu"
   }
 };
 
@@ -91,7 +88,7 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
@@ -102,34 +99,40 @@ client.once("clientReady", () => {
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
 
-  if (reaction.partial) await reaction.fetch();
-  const message = await reaction.message.fetch();
-
-  if (!message.guild) return;
-
-  const guildData = getGuild(message.guild.id);
-  if (!guildData.dmNotify) return;
-
-  const lang = T[guildData.language];
-  const embed = {
-    color: 0x00bfff,
-    title: lang.reactionTitle,
-    fields: [
-      { name: lang.server, value: message.guild.name },
-      { name: lang.channel, value: message.channel.toString(), inline: true },
-      { name: lang.author, value: `<@${message.author.id}>`, inline: true },
-      { name: lang.reactor, value: `<@${user.id}>`, inline: true },
-      { name: lang.emoji, value: reaction.emoji.toString(), inline: true }
-    ],
-    description:
-      `👉️ [${lang.jump}](${message.url})\n\n` +
-      `**内容:**\n${message.content || lang.none}`,
-    timestamp: new Date()
-  };
-
   try {
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+
+    const message = reaction.message;
+    if (!message.guild) return;
+
+    const guildData = getGuild(message.guild.id);
+    if (!guildData.dmNotify) return;
+
+    const lang = T[guildData.language] || T.ja;
+
+    const jumpUrl = `https://discord.com/channels/${message.guild.id}/${message.channel.id}/${message.id}`;
+
+    const embed = {
+      color: 0x00bfff,
+      title: lang.reactionTitle,
+      description:
+        `👉 **[${lang.jump}](${jumpUrl})**\n\n` +
+        `**${lang.content}:**\n${message.content || lang.none}`,
+      fields: [
+        { name: lang.server, value: message.guild.name },
+        { name: lang.channel, value: `<#${message.channel.id}>`, inline: true },
+        { name: lang.author, value: `<@${message.author.id}>`, inline: true },
+        { name: lang.reactor, value: `<@${user.id}>`, inline: true },
+        { name: lang.emoji, value: reaction.emoji.toString(), inline: true }
+      ],
+      timestamp: new Date()
+    };
+
     await message.author.send({ embeds: [embed] });
-  } catch {}
+  } catch (err) {
+    console.error("Reaction notify error:", err);
+  }
 });
 
 /* =======================
