@@ -1,7 +1,8 @@
 const {
   Client,
   GatewayIntentBits,
-  Partials
+  Partials,
+  EmbedBuilder
 } = require("discord.js");
 
 const client = new Client({
@@ -20,13 +21,14 @@ const client = new Client({
 
 // 通知ON/OFF管理（userId => true/false）
 // true = 通知ON, false = 通知OFF
+// 初期状態は ON
 const notifyState = new Map();
 
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
 });
 
-// /ignore コマンド
+// /ignore コマンド処理
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== "ignore") return;
@@ -53,6 +55,7 @@ client.on("interactionCreate", async interaction => {
 
 // リアクション検知
 client.on("messageReactionAdd", async (reaction, user) => {
+  // Botのリアクションは無視
   if (user.bot) return;
 
   // partial対策
@@ -68,19 +71,45 @@ client.on("messageReactionAdd", async (reaction, user) => {
   const author = message.author;
   if (!author) return;
 
-  // 初期状態は通知ON
+  // 通知ON/OFF確認（デフォルトON）
   const notify = notifyState.get(author.id) ?? true;
   if (!notify) return;
 
-  // 自分のメッセージにだけ送る（＝作者本人）
+  // メッセージURL（ジャンプ用）
+  const messageUrl = message.guildId
+    ? `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`
+    : null;
+
+  const embed = new EmbedBuilder()
+    .setTitle("📢 リアクション通知")
+    .setColor(0x5865F2)
+    .setDescription(
+      `**サーバー**: ${
+        message.guild
+          ? `[${message.guild.name}](${messageUrl})`
+          : "DM"
+      }\n` +
+      `**チャンネル**: <#${message.channelId}>\n` +
+      `**リアクション**: ${reaction.emoji}\n` +
+      `**付けた人**: <@${user.id}>`
+    )
+    .setTimestamp();
+
+  // 本文がある場合だけ表示
+  if (message.content) {
+    embed.addFields({
+      name: "💬 メッセージ内容",
+      value: message.content.slice(0, 1024)
+    });
+  }
+
+  // フッター
+  embed.setFooter({
+    text: "クリックで元メッセージへ移動"
+  });
+
   try {
-    await author.send(
-      `📢 **リアクション通知**\n` +
-      `サーバー: ${message.guild?.name ?? "DM"}\n` +
-      `付けた人: ${user.tag}\n` +
-      `絵文字: ${reaction.emoji}\n` +
-      `内容: ${message.content || "(本文なし)"}`
-    );
+    await author.send({ embeds: [embed] });
   } catch (e) {
     console.error("DM送信失敗", e);
   }
