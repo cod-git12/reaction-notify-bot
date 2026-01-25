@@ -1,0 +1,13 @@
+{
+  "name": "reaction-notify-bot",
+  "version": "1.0.0",
+  "description": "Notify via DM when reactions are added",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  }
+}
