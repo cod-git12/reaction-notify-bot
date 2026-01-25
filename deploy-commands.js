@@ -1,13 +1,14 @@
-const { REST, Routes, SlashCommandBuilder, ChannelType } = require("discord.js");
+require("dotenv").config();
+const { REST, Routes, SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require("discord.js");
 
 const commands = [
   new SlashCommandBuilder()
     .setName("ignore")
-    .setDescription("リアクション通知のON/OFF")
+    .setDescription("リアクション通知をON/OFF")
     .addStringOption(option =>
       option
         .setName("mode")
-        .setDescription("on = 通知OFF / off = 通知ON")
+        .setDescription("on=通知OFF / off=通知ON")
         .setRequired(true)
         .addChoices(
           { name: "on (通知OFF)", value: "on" },
@@ -17,7 +18,8 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("リアクションログの送信先を設定")
+    .setDescription("リアクションログ設定（管理者のみ）")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(sub =>
       sub
         .setName("add")
@@ -25,7 +27,7 @@ const commands = [
         .addChannelOption(option =>
           option
             .setName("channel")
-            .setDescription("ログを送信するチャンネル")
+            .setDescription("ログ送信先")
             .setRequired(true)
             .addChannelTypes(ChannelType.GuildText)
         )
@@ -35,9 +37,9 @@ const commands = [
         .setName("remove")
         .setDescription("ログ送信を無効化")
     )
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 (async () => {
   await rest.put(
