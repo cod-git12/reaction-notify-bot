@@ -9,8 +9,8 @@ const {
 } = require("discord.js");
 const fs = require("fs");
 
-const TOKEN = process.env.BOT_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
+const TOKEN = process.env.REA_BOT_TOKEN;
+const CLIENT_ID = process.env.REA_CLIENT_ID;
 
 const DATA_FILE = "./data.json";
 
