@@ -40,7 +40,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
 
 (async () => {
   try {
-    console.log("Deploying commands...");
+    console.log("✅️ Deploying commands...");
     await rest.put(
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commands }
