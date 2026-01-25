@@ -122,8 +122,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
       { name: lang.emoji, value: reaction.emoji.toString(), inline: true }
     ],
     description:
-      `${lang.jump}\n` +
-      `[${message.url}](${message.url})\n\n` +
+      `👉️ [${lang.jump}](${message.url})\n\n` +
       `**内容:**\n${message.content || lang.none}`,
     timestamp: new Date()
   };
