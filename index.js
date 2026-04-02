@@ -7,16 +7,10 @@ const {
 const fs = require("fs");
 const express = require("express");
 
-/* =======================
-   環境変数
-======================= */
 const TOKEN = process.env.REA_BOT_TOKEN;
 const UPDATE_CHANNEL_ID = "1453677204301942826";
 const DATA_FILE = "./data.json";
 
-/* =======================
-   永続データ
-======================= */
 let data = { guilds: {} };
 if (fs.existsSync(DATA_FILE)) {
   try {
@@ -40,18 +34,12 @@ function getGuild(gid) {
   return data.guilds[gid];
 }
 
-/* =======================
-   多言語
-======================= */
 const T = {
   ja: { reactionTitle: "リアクション通知", jump: "元メッセージへジャンプ", none: "（本文なし）", server: "サーバー", channel: "チャンネル", author: "メッセージ作者", reactor: "リアクションした人", emoji: "絵文字", content: "内容" },
   en: { reactionTitle: "Reaction Notification", jump: "Jump to message", none: "(No content)", server: "Server", channel: "Channel", author: "Message author", reactor: "Reacted by", emoji: "Emoji", content: "Content" },
   fr: { reactionTitle: "Notification de réaction", jump: "Aller au message", none: "(Aucun contenu)", server: "Serveur", channel: "Salon", author: "Auteur du message", reactor: "Réaction par", emoji: "Emoji", content: "Contenu" }
 };
 
-/* =======================
-   Client
-======================= */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -68,16 +56,12 @@ client.once("ready", () => {
   console.log(`✅ ${client.user.tag} オンライン (${client.guilds.cache.size} サーバー)`);
 });
 
-// ★ 詳細なエラーログ
 client.on("error", (e) => console.error("Discord client error:", e));
 client.on("warn",  (w) => console.warn("Discord client warn:", w));
 client.on("disconnect", () => console.error("Discord: 切断されました"));
 client.on("shardError", (e) => console.error("Shard error:", e));
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
 
-/* =======================
-   リアクション通知
-======================= */
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
 
@@ -122,9 +106,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
-/* =======================
-   コマンド処理
-======================= */
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -197,19 +178,13 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-/* =======================
-   Express（先に起動）
-======================= */
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive"));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server ready on port ${PORT}`));
 
-/* =======================
-   Discord ログイン（エラーを明示的にキャッチ）
-======================= */
 console.log("Discord へのログインを試みています...");
-console.log("TOKEN 先頭6文字:", TOKEN ? TOKEN.substring(0, 6) : "未設定！！");
+console.log("TOKEN 先頭6文字:", TOKEN ? TOKEN.substring(0, 6) : "未設定");
 
 client.login(TOKEN).catch((err) => {
   console.error("❌ client.login() 失敗:", err.message);
