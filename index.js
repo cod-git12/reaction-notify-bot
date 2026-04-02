@@ -2,7 +2,7 @@ const {
   Client,
   GatewayIntentBits,
   Partials,
-  PermissionsBitField // 追加
+  PermissionsBitField
 } = require("discord.js");
 const fs = require("fs");
 const express = require("express");
@@ -30,7 +30,11 @@ if (fs.existsSync(DATA_FILE)) {
 }
 
 function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("データの保存に失敗しました:", e);
+  }
 }
 
 function getGuild(gid) {
@@ -101,10 +105,16 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
+// ログイン成功時の詳細ログ
 client.once("ready", () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ ログイン成功: ${client.user.tag}`);
+  console.log(`ステータス: オンライン`);
   console.log(`参加中のサーバー数: ${client.guilds.cache.size}`);
 });
+
+// エラー発生時のログ
+client.on("error", (err) => console.error("Discord Client Error:", err));
+process.on("unhandledRejection", (err) => console.error("Unhandled Promise Rejection:", err));
 
 /* =======================
    リアクション通知
@@ -170,18 +180,18 @@ client.on("messageReactionAdd", async (reaction, user) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // コマンドを受け取ったことを即座にログに出す
-  console.log(`Command received: ${interaction.commandName}`);
+  console.log(`[Interaction] コマンド受信: ${interaction.commandName} (User: ${interaction.user.tag})`);
 
   try {
     const gid = interaction.guildId;
     const g = getGuild(gid);
 
-    // ★ 修正ポイント：memberPermissions を使う方が slash command では安全
+    // 管理者権限チェックの安定化
     const isAdmin = interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator);
     const isOwner = interaction.user.id === "1324865769892352011";
 
     if (!isAdmin && !isOwner) {
+      console.log(`[Interaction] 権限不足により拒否: ${interaction.user.tag}`);
       return interaction.reply({
         content: "❌ このコマンドを実行する権限がありません。",
         ephemeral: true
@@ -251,8 +261,19 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(TOKEN);
+/* =======================
+   ログイン実行
+======================= */
+
+client.login(TOKEN).catch(err => {
+  console.error("❌ ログイン失敗（トークンを確認してください）:", err);
+});
+
+/* =======================
+   Express (Render維持用)
+======================= */
 
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive"));
-app.listen(process.env.PORT || 3000, () => console.log("Server is ready."));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server is ready on port ${PORT}`));
