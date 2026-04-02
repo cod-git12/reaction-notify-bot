@@ -56,9 +56,20 @@ const rest = new REST({ version: "10" })
   .setToken(process.env.REA_BOT_TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(process.env.REA_CLIENT_ID),
-    { body: commands }
-  );
-  console.log("Commands deployed.");
+  try {
+    console.log("Started refreshing application (/) commands.");
+
+    await rest.put(
+      // ★ここを書き換える！
+      // process.env.REA_CLIENT_ID ではなく、直接ID（数字の羅列）を入れる
+      Routes.applicationCommands("1464782363409252473"), 
+      { body: commands }
+    );
+
+    console.log("Successfully reloaded application (/) commands.");
+    process.exit(0); // 終わったら終了させる
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
 })();
