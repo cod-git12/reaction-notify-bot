@@ -50,7 +50,7 @@ const T = {
 };
 
 /* =======================
-   Client (インテントを数値で確実に指定)
+   Client
 ======================= */
 const client = new Client({
   intents: [
@@ -68,7 +68,6 @@ client.once("ready", () => {
   console.log(`✅ ${client.user.tag} オンライン (${client.guilds.cache.size} サーバー)`);
 });
 
-// エラーログの可視化
 client.on("error", console.error);
 process.on("unhandledRejection", console.error);
 
@@ -79,7 +78,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
 
   try {
-    // データの完全取得 (fetch) を確実に行う
     if (reaction.partial) await reaction.fetch().catch(() => null);
     if (reaction.message.partial) await reaction.message.fetch().catch(() => null);
 
@@ -90,7 +88,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const lang = T[guildData.language] || T.ja;
     const jumpUrl = `https://discord.com/channels/${message.guild.id}/${message.channel.id}/${message.id}`;
 
-    // message.author が null の場合の対策
     const authorTag = message.author ? `<@${message.author.id}>` : "不明なユーザー";
 
     const embed = {
@@ -104,15 +101,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
         { name: lang.reactor, value: `<@${user.id}>`, inline: true },
         { name: lang.emoji, value: reaction.emoji.toString(), inline: true }
       ],
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
-    // DM通知
     if (guildData.dmNotify && message.author) {
       await message.author.send({ embeds: [embed] }).catch(e => console.log("DM送信失敗:", e.message));
     }
 
-    // ログチャンネル通知 (cache.get ではなく fetch を使う)
     if (guildData.logChannelId) {
       const logCh = await message.guild.channels.fetch(guildData.logChannelId).catch(() => null);
       if (logCh) await logCh.send({ embeds: [embed] }).catch(e => console.log("ログ送信失敗:", e.message));
@@ -129,25 +124,30 @@ client.on("messageReactionAdd", async (reaction, user) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 「応答しませんでした」を防ぐため、即座に返信予約
-  await interaction.deferReply({ ephemeral: true }).catch(() => null);
+  // デバッグ用: イベントが届いているか確認
+  console.log(`[CMD] ${interaction.commandName} by ${interaction.user.tag}`);
+
+  const deferred = await interaction.deferReply({ ephemeral: true }).then(() => true).catch(() => false);
+  const reply = async (content) => {
+    if (deferred) return interaction.editReply(content).catch(console.error);
+    return interaction.reply({ content, ephemeral: true }).catch(console.error);
+  };
 
   try {
     const gid = interaction.guildId;
     const g = getGuild(gid);
 
-    // 権限チェック
     const isAdmin = interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator);
     const isOwner = interaction.user.id === "1324865769892352011";
 
     if (!isAdmin && !isOwner) {
-      return interaction.editReply("❌ このコマンドを実行する権限がありません。");
+      return reply("❌ このコマンドを実行する権限がありません。");
     }
 
     if (interaction.commandName === "ignore") {
       g.dmNotify = !g.dmNotify;
       saveData();
-      return interaction.editReply(`DM通知を **${g.dmNotify ? "ON" : "OFF"}** にしました`);
+      return reply(`DM通知を **${g.dmNotify ? "ON" : "OFF"}** にしました`);
     }
 
     if (interaction.commandName === "log") {
@@ -156,35 +156,42 @@ client.on("interactionCreate", async (interaction) => {
         const ch = interaction.options.getChannel("channel");
         g.logChannelId = ch.id;
         saveData();
-        return interaction.editReply(`ログ送信チャンネルを <#${ch.id}> に設定しました`);
+        return reply(`ログ送信チャンネルを <#${ch.id}> に設定しました`);
       }
       if (sub === "remove") {
         g.logChannelId = null;
         saveData();
-        return interaction.editReply("ログ送信を無効化しました");
+        return reply("ログ送信を無効化しました");
       }
     }
 
     if (interaction.commandName === "language") {
       g.language = interaction.options.getString("lang");
       saveData();
-      return interaction.editReply(`言語を **${g.language}** に変更しました`);
+      return reply(`言語を **${g.language}** に変更しました`);
     }
 
     if (interaction.commandName === "update") {
       const msg = interaction.options.getString("text");
       const ch = await client.channels.fetch(UPDATE_CHANNEL_ID).catch(() => null);
       if (ch) {
+        // ★ 修正: embed: {} → embeds: [{}]、timestamp を ISO 文字列に
         await ch.send({
-          embed: { title: "📢 アップデート通知", description: msg, color: 0x00ff99, timestamp: new Date() }
+          embeds: [{
+            title: "📢 アップデート通知",
+            description: msg,
+            color: 0x00ff99,
+            timestamp: new Date().toISOString()
+          }]
         }).catch(() => null);
-        return interaction.editReply("アップデート通知を送信しました");
+        return reply("アップデート通知を送信しました");
       }
-      return interaction.editReply("通知チャンネルが見つかりませんでした");
+      return reply("通知チャンネルが見つかりませんでした");
     }
+
   } catch (err) {
     console.error("Interaction Error:", err);
-    await interaction.editReply("内部エラーが発生しました。").catch(() => null);
+    await reply("内部エラーが発生しました。").catch(() => null);
   }
 });
 
