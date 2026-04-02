@@ -164,6 +164,17 @@ client.on("interactionCreate", async (interaction) => {
   const gid = interaction.guildId;
   const g = getGuild(gid);
 
+  // ★ 権限チェック：管理者権限を持っているか、指定のID（あなた）のみ許可
+  const isAdmin = interaction.member.permissions.has("Administrator");
+  const isOwner = interaction.user.id === "1324865769892352011";
+
+  if (!isAdmin && !isOwner) {
+    return interaction.reply({
+      content: "❌ このコマンドを実行する権限がありません。",
+      ephemeral: true
+    });
+  }
+
   if (interaction.commandName === "ignore") {
     g.dmNotify = !g.dmNotify;
     saveData();
@@ -237,11 +248,15 @@ client.on("interactionCreate", async (interaction) => {
 
 client.login(TOKEN);
 
+/* =======================
+   Expressサーバー (Render用)
+======================= */
+
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("Bot is alive")
-})
+  res.send("Bot is alive");
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
