@@ -87,10 +87,10 @@ const T = {
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMembers, // 権限チェックに必要
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.DirectMessages, // DM送信に必要
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
@@ -98,6 +98,7 @@ const client = new Client({
 
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
+  console.log(`参加中のサーバー数: ${client.guilds.cache.size}`);
 });
 
 /* =======================
@@ -137,21 +138,25 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     // DM通知
     if (guildData.dmNotify) {
-      await message.author.send({ embeds: [embed] }).catch(() => {});
+      // ユーザーを明示的にfetchすることでDM送信の成功率を上げます
+      const targetUser = await client.users.fetch(message.author.id);
+      await targetUser.send({ embeds: [embed] }).catch(err => {
+        console.error(`DM送信失敗 (${targetUser.tag}):`, err.message);
+      });
     }
 
     // ログチャンネル通知
     if (guildData.logChannelId) {
-      const logCh = message.guild.channels.cache.get(
-        guildData.logChannelId
-      );
+      const logCh = await message.guild.channels.fetch(guildData.logChannelId).catch(() => null);
       if (logCh) {
-        logCh.send({ embeds: [embed] }).catch(() => {});
+        await logCh.send({ embeds: [embed] }).catch(err => {
+          console.error("ログ送信失敗:", err.message);
+        });
       }
     }
 
   } catch (err) {
-    console.error("Reaction notify error:", err);
+    console.error("リアクションイベントエラー:", err);
   }
 });
 
@@ -162,104 +167,86 @@ client.on("messageReactionAdd", async (reaction, user) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const gid = interaction.guildId;
-  const g = getGuild(gid);
+  try {
+    const gid = interaction.guildId;
+    const g = getGuild(gid);
 
-  // ★ 権限チェック：管理者権限を持っているか、指定のID（あなた）のみ許可
-  const isAdmin = interaction.member.permissions.has("Administrator");
-  const isOwner = interaction.user.id === "1324865769892352011";
+    // 管理者権限を持っているか、あなた（1324865769892352011）であれば許可
+    const isAdmin = interaction.member?.permissions.has("Administrator");
+    const isOwner = interaction.user.id === "1324865769892352011";
 
-  if (!isAdmin && !isOwner) {
-    return interaction.reply({
-      content: "❌ このコマンドを実行する権限がありません。",
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === "ignore") {
-    g.dmNotify = !g.dmNotify;
-    saveData();
-
-    await interaction.reply({
-      content: `DM通知を **${g.dmNotify ? "ON" : "OFF"}** にしました`,
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === "log") {
-    const sub = interaction.options.getSubcommand();
-
-    if (sub === "add") {
-      const ch = interaction.options.getChannel("channel");
-      g.logChannelId = ch.id;
-      saveData();
-
-      await interaction.reply({
-        content: `ログ送信チャンネルを <#${ch.id}> に設定しました`,
+    if (!isAdmin && !isOwner) {
+      return interaction.reply({
+        content: "❌ このコマンドを実行する権限がありません。",
         ephemeral: true
       });
     }
 
-    if (sub === "remove") {
-      g.logChannelId = null;
+    if (interaction.commandName === "ignore") {
+      g.dmNotify = !g.dmNotify;
       saveData();
-
       await interaction.reply({
-        content: "ログ送信を無効化しました",
+        content: `DM通知を **${g.dmNotify ? "ON" : "OFF"}** にしました`,
         ephemeral: true
       });
     }
-  }
 
-  if (interaction.commandName === "language") {
-    g.language = interaction.options.getString("lang");
-    saveData();
+    if (interaction.commandName === "log") {
+      const sub = interaction.options.getSubcommand();
+      if (sub === "add") {
+        const ch = interaction.options.getChannel("channel");
+        g.logChannelId = ch.id;
+        saveData();
+        await interaction.reply({
+          content: `ログ送信チャンネルを <#${ch.id}> に設定しました`,
+          ephemeral: true
+        });
+      } else if (sub === "remove") {
+        g.logChannelId = null;
+        saveData();
+        await interaction.reply({
+          content: "ログ送信を無効化しました",
+          ephemeral: true
+        });
+      }
+    }
 
-    await interaction.reply({
-      content: `言語を **${g.language}** に変更しました`,
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === "update") {
-    const msg = interaction.options.getString("text");
-
-    const ch = client.channels.cache.get(UPDATE_CHANNEL_ID);
-    if (ch) {
-      await ch.send({
-        embeds: [{
-          title: "📢 アップデート通知",
-          description: msg,
-          color: 0x00ff99,
-          timestamp: new Date()
-        }]
+    if (interaction.commandName === "language") {
+      g.language = interaction.options.getString("lang");
+      saveData();
+      await interaction.reply({
+        content: `言語を **${g.language}** に変更しました`,
+        ephemeral: true
       });
     }
 
-    await interaction.reply({
-      content: "アップデート通知を送信しました",
-      ephemeral: true
-    });
+    if (interaction.commandName === "update") {
+      const msg = interaction.options.getString("text");
+      const ch = await client.channels.fetch(UPDATE_CHANNEL_ID).catch(() => null);
+      if (ch) {
+        await ch.send({
+          embeds: [{
+            title: "📢 アップデート通知",
+            description: msg,
+            color: 0x00ff99,
+            timestamp: new Date()
+          }]
+        });
+        await interaction.reply({ content: "アップデート通知を送信しました", ephemeral: true });
+      } else {
+        await interaction.reply({ content: "通知チャンネルが見つかりませんでした", ephemeral: true });
+      }
+    }
+  } catch (err) {
+    console.error("コマンド実行エラー:", err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: "エラーが発生しました", ephemeral: true });
+    }
   }
 });
-
-/* =======================
-   ログイン
-======================= */
 
 client.login(TOKEN);
 
-/* =======================
-   Expressサーバー (Render用)
-======================= */
-
 const app = express();
-
-app.get("/", (req, res) => {
-  res.send("Bot is alive");
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+app.get("/", (req, res) => res.send("Bot is alive"));
+app.listen(process.env.PORT || 3000);
