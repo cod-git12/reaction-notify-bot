@@ -32,6 +32,7 @@ const commands = [
     .addStringOption(opt =>
       opt
         .setName("lang")
+        .setDescription("使用する言語を選択してください")
         .setRequired(true)
         .addChoices(
           { name: "日本語", value: "ja" },
