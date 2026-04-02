@@ -68,8 +68,12 @@ client.once("ready", () => {
   console.log(`✅ ${client.user.tag} オンライン (${client.guilds.cache.size} サーバー)`);
 });
 
-client.on("error", console.error);
-process.on("unhandledRejection", console.error);
+// ★ 詳細なエラーログ
+client.on("error", (e) => console.error("Discord client error:", e));
+client.on("warn",  (w) => console.warn("Discord client warn:", w));
+client.on("disconnect", () => console.error("Discord: 切断されました"));
+client.on("shardError", (e) => console.error("Shard error:", e));
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
 
 /* =======================
    リアクション通知
@@ -124,7 +128,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // デバッグ用: イベントが届いているか確認
   console.log(`[CMD] ${interaction.commandName} by ${interaction.user.tag}`);
 
   const deferred = await interaction.deferReply({ ephemeral: true }).then(() => true).catch(() => false);
@@ -175,7 +178,6 @@ client.on("interactionCreate", async (interaction) => {
       const msg = interaction.options.getString("text");
       const ch = await client.channels.fetch(UPDATE_CHANNEL_ID).catch(() => null);
       if (ch) {
-        // ★ 修正: embed: {} → embeds: [{}]、timestamp を ISO 文字列に
         await ch.send({
           embeds: [{
             title: "📢 アップデート通知",
@@ -195,12 +197,21 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(TOKEN);
-
 /* =======================
-   Express
+   Express（先に起動）
 ======================= */
 const app = express();
 app.get("/", (req, res) => res.send("Bot is alive"));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server ready on port ${PORT}`));
+
+/* =======================
+   Discord ログイン（エラーを明示的にキャッチ）
+======================= */
+console.log("Discord へのログインを試みています...");
+console.log("TOKEN 先頭6文字:", TOKEN ? TOKEN.substring(0, 6) : "未設定！！");
+
+client.login(TOKEN).catch((err) => {
+  console.error("❌ client.login() 失敗:", err.message);
+  console.error("原因: トークンが無効か、Discordに接続できません");
+});
