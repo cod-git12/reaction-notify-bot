@@ -4,6 +4,7 @@ const {
   Partials
 } = require("discord.js");
 const fs = require("fs");
+const express = require("express");
 
 /* =======================
    環境変数
@@ -235,3 +236,14 @@ client.on("interactionCreate", async (interaction) => {
 ======================= */
 
 client.login(TOKEN);
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Bot is alive")
+})
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
