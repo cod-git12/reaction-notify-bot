@@ -11,10 +11,11 @@ const TOKEN = process.env.REA_BOT_TOKEN;
 const UPDATE_CHANNEL_ID = "1453677204301942826";
 const DATA_FILE = "./data.json";
 
-let data = { guilds: {} };
+let data = { guilds: {}, notifications: {} };
 if (fs.existsSync(DATA_FILE)) {
   try {
     data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    if (!data.notifications) data.notifications = {};
   } catch (e) {
     console.error("data.jsonの読み込みに失敗しました:", e);
   }
@@ -32,6 +33,22 @@ function getGuild(gid) {
     saveData();
   }
   return data.guilds[gid];
+}
+
+// key: "messageId-emoji-userId"
+function notifKey(messageId, emoji, userId) {
+  return `${messageId}-${emoji}-${userId}`;
+}
+function saveNotif(key, dmMsgId, logMsgId) {
+  data.notifications[key] = { dmMsgId, logMsgId };
+  saveData();
+}
+function getNotif(key) {
+  return data.notifications[key] || null;
+}
+function deleteNotif(key) {
+  delete data.notifications[key];
+  saveData();
 }
 
 const T = {
@@ -58,7 +75,6 @@ client.once("ready", () => {
 
 client.on("error", (e) => console.error("Discord client error:", e));
 client.on("warn",  (w) => console.warn("Discord client warn:", w));
-client.on("disconnect", () => console.error("Discord: 切断されました"));
 client.on("shardError", (e) => console.error("Shard error:", e));
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
 
@@ -75,8 +91,8 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const guildData = getGuild(message.guild.id);
     const lang = T[guildData.language] || T.ja;
     const jumpUrl = `https://discord.com/channels/${message.guild.id}/${message.channel.id}/${message.id}`;
-
     const authorTag = message.author ? `<@${message.author.id}>` : "不明なユーザー";
+    const emojiStr = reaction.emoji.toString();
 
     const embed = {
       color: 0x00bfff,
@@ -87,22 +103,81 @@ client.on("messageReactionAdd", async (reaction, user) => {
         { name: lang.channel, value: `<#${message.channel.id}>`, inline: true },
         { name: lang.author, value: authorTag, inline: true },
         { name: lang.reactor, value: `<@${user.id}>`, inline: true },
-        { name: lang.emoji, value: reaction.emoji.toString(), inline: true }
+        { name: lang.emoji, value: emojiStr, inline: true }
       ],
       timestamp: new Date().toISOString()
     };
 
+    const key = notifKey(message.id, emojiStr, user.id);
+    let dmMsgId = null;
+    let logMsgId = null;
+
     if (guildData.dmNotify && message.author) {
-      await message.author.send({ embeds: [embed] }).catch(e => console.log("DM送信失敗:", e.message));
+      const dmMsg = await message.author.send({ embeds: [embed] }).catch(e => {
+        console.log("DM送信失敗:", e.message);
+        return null;
+      });
+      if (dmMsg) dmMsgId = dmMsg.id;
     }
 
     if (guildData.logChannelId) {
       const logCh = await message.guild.channels.fetch(guildData.logChannelId).catch(() => null);
-      if (logCh) await logCh.send({ embeds: [embed] }).catch(e => console.log("ログ送信失敗:", e.message));
+      if (logCh) {
+        const logMsg = await logCh.send({ embeds: [embed] }).catch(e => {
+          console.log("ログ送信失敗:", e.message);
+          return null;
+        });
+        if (logMsg) logMsgId = logMsg.id;
+      }
+    }
+
+    if (dmMsgId || logMsgId) {
+      saveNotif(key, dmMsgId, logMsgId);
     }
 
   } catch (err) {
-    console.error("Reaction Error:", err);
+    console.error("ReactionAdd Error:", err);
+  }
+});
+
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (user.bot) return;
+
+  try {
+    if (reaction.partial) await reaction.fetch().catch(() => null);
+    if (reaction.message.partial) await reaction.message.fetch().catch(() => null);
+
+    const message = reaction.message;
+    if (!message.guild) return;
+
+    const guildData = getGuild(message.guild.id);
+    const emojiStr = reaction.emoji.toString();
+    const key = notifKey(message.id, emojiStr, user.id);
+    const notif = getNotif(key);
+    if (!notif) return;
+
+    if (notif.dmMsgId && message.author) {
+      const dmChannel = await message.author.createDM().catch(() => null);
+      if (dmChannel) {
+        await dmChannel.messages.fetch(notif.dmMsgId)
+          .then(msg => msg.delete())
+          .catch(e => console.log("DM削除失敗:", e.message));
+      }
+    }
+
+    if (notif.logMsgId && guildData.logChannelId) {
+      const logCh = await message.guild.channels.fetch(guildData.logChannelId).catch(() => null);
+      if (logCh) {
+        await logCh.messages.fetch(notif.logMsgId)
+          .then(msg => msg.delete())
+          .catch(e => console.log("ログ削除失敗:", e.message));
+      }
+    }
+
+    deleteNotif(key);
+
+  } catch (err) {
+    console.error("ReactionRemove Error:", err);
   }
 });
 
@@ -184,9 +259,17 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server ready on port ${PORT}`));
 
 console.log("Discord へのログインを試みています...");
-console.log("TOKEN 先頭6文字:", TOKEN ? TOKEN.substring(0, 6) : "未設定");
+console.log("TOKEN 先頭6文字:", TOKEN ? TOKEN.substring(0, 6) : "未設定！！");
+
+const loginTimeout = setTimeout(() => {
+  console.error("❌ タイムアウト: 30秒以内にDiscordからreadyイベントが来ませんでした");
+}, 30000);
+
+client.once("ready", () => {
+  clearTimeout(loginTimeout);
+});
 
 client.login(TOKEN).catch((err) => {
+  clearTimeout(loginTimeout);
   console.error("❌ client.login() 失敗:", err.message);
-  console.error("原因: トークンが無効か、Discordに接続できません");
 });
