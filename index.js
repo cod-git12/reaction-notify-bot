@@ -71,6 +71,25 @@ const client = new Client({
 
 client.once("ready", () => {
   console.log(`✅ ${client.user.tag} オンライン (${client.guilds.cache.size} サーバー)`);
+
+  
+  try {
+    const channel = await client.channels.fetch(UPDATE_CHANNEL_ID)
+    if (channel) {
+      channel.send({
+        embeds: [
+          new EmbedBuilder()
+          .setTitle("🚀 Botが起動したよ！")
+          .setDescription("Botがアップデートされたよ！")
+          .addFields({ name: "起動時刻", value: new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) })
+          .setColor(0x00ff99)
+          .setTimestamp()
+        ]
+      });
+    }
+  } catch (e) {
+    console.error("アップデート通知の送信に失敗:", e)
+  }
 });
 
 client.on("error", (e) => console.error("Discord client error:", e));
@@ -228,23 +247,6 @@ client.on("interactionCreate", async (interaction) => {
       g.language = interaction.options.getString("lang");
       saveData();
       return reply(`言語を **${g.language}** に変更しました`);
-    }
-
-    if (interaction.commandName === "update") {
-      const msg = interaction.options.getString("text");
-      const ch = await client.channels.fetch(UPDATE_CHANNEL_ID).catch(() => null);
-      if (ch) {
-        await ch.send({
-          embeds: [{
-            title: "📢 アップデート通知",
-            description: msg,
-            color: 0x00ff99,
-            timestamp: new Date().toISOString()
-          }]
-        }).catch(() => null);
-        return reply("アップデート通知を送信しました");
-      }
-      return reply("通知チャンネルが見つかりませんでした");
     }
 
   } catch (err) {
