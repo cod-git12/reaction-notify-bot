@@ -1,14 +1,16 @@
+require('dotenv').config();
 const {
   Client,
   GatewayIntentBits,
   Partials,
-  PermissionsBitField
+  PermissionsBitField,
+  EmbedBuilder
 } = require("discord.js");
 const fs = require("fs");
 const express = require("express");
 
 const TOKEN = process.env.REA_BOT_TOKEN;
-const UPDATE_CHANNEL_ID = "1453677204301942826";
+const UPDATE_CHANNEL_ID = "1456250291627229184";
 const DATA_FILE = "./data.json";
 
 let data = { guilds: {}, notifications: {} };
@@ -69,7 +71,7 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User]
 });
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`✅ ${client.user.tag} オンライン (${client.guilds.cache.size} サーバー)`);
 
   
