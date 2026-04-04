@@ -41,15 +41,6 @@ const commands = [
         )
     ),
 
-  new SlashCommandBuilder()
-    .setName("update")
-    .setDescription("アップデート通知を送信")
-    .addStringOption(opt =>
-      opt
-        .setName("text")
-        .setDescription("通知内容")
-        .setRequired(true)
-    )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" })
